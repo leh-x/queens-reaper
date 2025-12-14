@@ -31,7 +31,7 @@ def test_debug_strobe_detailed():
     """Detailed analysis of what's happening with test_strobe.gif"""
     
     # First, basic info
-    cap = cv2.VideoCapture(STROBE_GIF)
+    cap = cv2.VideoCapture(UNSAFE_GIF)
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_count_total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
@@ -86,7 +86,7 @@ def test_debug_strobe_detailed():
         print(f"Threshold needed: {config.FLASH_THRESHOLD}")
     
     # Now run the actual detection
-    is_dangerous, reason, details = analyze_video_for_flashing(STROBE_GIF)
+    is_dangerous, reason, details = analyze_video_for_flashing(UNSAFE_GIF)
     
     print(f"\n=== ACTUAL DETECTION RESULT ===")
     print(f"is_dangerous: {is_dangerous}")
