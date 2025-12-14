@@ -1,3 +1,8 @@
+# Author:       leh-x
+# AI:           Claude
+# Date:         Dec 14 2025
+# Purpose:      Discord bot that detects and auto moderates photosensitive content
+
 import discord
 from discord.ext import commands
 import os
