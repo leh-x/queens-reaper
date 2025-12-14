@@ -2,10 +2,15 @@ import pytest
 import sys
 import os
 
-# Add parent directory to path to import bot module
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add the root directory to the path so we can import bot
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from bot import analyze_video_for_flashing
+
+# Path to test resources
+TEST_RESOURCES_DIR = os.path.join(os.path.dirname(__file__), '..', 'test_resources')
+UNSAFE_GIF = os.path.join(TEST_RESOURCES_DIR, 'test_strobe.gif')
+SAFE_GIF = os.path.join(TEST_RESOURCES_DIR, 'test_safe.gif')
 
 
 class TestPhotosensitiveDetection:
@@ -14,7 +19,7 @@ class TestPhotosensitiveDetection:
     def test_unsafe_gif_detected(self):
         """Test that unsafe.gif is correctly identified as dangerous"""
         # Analyze the unsafe GIF
-        is_dangerous, reason, details = analyze_video_for_flashing('unsafe.gif')
+        is_dangerous, reason, details = analyze_video_for_flashing(UNSAFE_GIF)
         
         # Assert that it was detected as dangerous
         assert is_dangerous is True, "unsafe.gif should be detected as dangerous"
@@ -24,7 +29,7 @@ class TestPhotosensitiveDetection:
     def test_unsafe_gif_has_reason(self):
         """Test that unsafe.gif detection provides a specific reason"""
         # Analyze the unsafe GIF
-        is_dangerous, reason, details = analyze_video_for_flashing('unsafe.gif')
+        is_dangerous, reason, details = analyze_video_for_flashing(UNSAFE_GIF)
         
         # Assert that a reason is provided
         assert is_dangerous is True, "unsafe.gif should be detected as dangerous"
@@ -35,7 +40,7 @@ class TestPhotosensitiveDetection:
     def test_safe_gif_not_detected(self):
         """Test that safe.gif is correctly identified as safe"""
         # Analyze the safe GIF
-        is_dangerous, reason, details = analyze_video_for_flashing('safe.gif')
+        is_dangerous, reason, details = analyze_video_for_flashing(SAFE_GIF)
         
         # Assert that it was NOT detected as dangerous
         assert is_dangerous is False, "safe.gif should NOT be detected as dangerous"
@@ -45,7 +50,7 @@ class TestPhotosensitiveDetection:
     def test_safe_gif_returns_false(self):
         """Test that safe.gif analysis returns False with no warnings"""
         # Analyze the safe GIF
-        is_dangerous, reason, details = analyze_video_for_flashing('safe.gif')
+        is_dangerous, reason, details = analyze_video_for_flashing(SAFE_GIF)
         
         # Assert safe results
         assert is_dangerous is False, "safe.gif should return False for is_dangerous"
