@@ -8,6 +8,9 @@ from PIL import Image
 import numpy as np
 import cv2
 import requests
+import re
+import tempfile
+import subprocess
 
 # Load environment variables from .env file
 load_dotenv()
@@ -46,6 +49,59 @@ async def download_file(url):
         print(f"Error downloading file: {e}")
         return None
 
+async def download_youtube_video(url, max_duration=30):
+    """
+    Download a YouTube video for analysis
+    Only downloads first max_duration seconds to save time/bandwidth
+    Returns: path to downloaded video file or None
+    """
+    try:
+        # Create temp directory
+        temp_dir = tempfile.mkdtemp()
+        output_path = os.path.join(temp_dir, 'video.mp4')
+        
+        # Use yt-dlp to download (first N seconds only for efficiency)
+        cmd = [
+            'yt-dlp',
+            '--format', 'worst',  # Get lowest quality to save bandwidth
+            '--download-sections', f'*0-{max_duration}',  # Only first N seconds
+            '--output', output_path,
+            '--no-playlist',
+            '--quiet',
+            url
+        ]
+        
+        # Run yt-dlp
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
+        
+        if process.returncode == 0 and os.path.exists(output_path):
+            return output_path
+        else:
+            print(f"yt-dlp error: {stderr.decode()}")
+            return None
+            
+    except asyncio.TimeoutError:
+        print("YouTube download timed out")
+        return None
+    except Exception as e:
+        print(f"Error downloading YouTube video: {e}")
+        return None
+
+def is_youtube_url(url):
+    """Check if URL is a YouTube video"""
+    youtube_patterns = [
+        r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=',
+        r'(?:https?://)?(?:www\.)?youtu\.be/',
+        r'(?:https?://)?(?:www\.)?youtube\.com/shorts/',
+    ]
+    return any(re.search(pattern, url) for pattern in youtube_patterns)
+
 def analyze_image_for_flashing(image_bytes):
     """
     Analyze a static image for high-contrast patterns that could be problematic
@@ -68,16 +124,23 @@ def analyze_image_for_flashing(image_bytes):
         print(f"Error analyzing image: {e}")
         return False, None
 
-def analyze_video_for_flashing(video_bytes):
+def analyze_video_for_flashing(video_source):
     """
     Analyze a video/GIF for photosensitive triggers
+    Args:
+        video_source: Either BytesIO object or file path string
     Returns: (is_dangerous, reason, details)
     """
     try:
-        # Save bytes to temporary file for OpenCV
-        temp_path = '/tmp/temp_video.mp4'
-        with open(temp_path, 'wb') as f:
-            f.write(video_bytes.read())
+        # Handle both BytesIO and file path
+        if isinstance(video_source, str):
+            # It's a file path
+            temp_path = video_source
+        else:
+            # It's BytesIO, save to temp file
+            temp_path = '/tmp/temp_video.mp4'
+            with open(temp_path, 'wb') as f:
+                f.write(video_source.read())
         
         cap = cv2.VideoCapture(temp_path)
         
@@ -230,6 +293,18 @@ async def on_message(message):
                 'source': 'tenor_link'
             })
     
+    # Check for YouTube URLs in message content
+    if 'youtube.com' in message.content.lower() or 'youtu.be' in message.content.lower():
+        # Extract URLs from message
+        url_pattern = r'https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[^\s]+'
+        found_urls = re.findall(url_pattern, message.content)
+        for url in found_urls:
+            urls_to_check.append({
+                'url': url,
+                'filename': 'youtube_video',
+                'source': 'youtube'
+            })
+    
     # Process all found URLs
     if urls_to_check:
     # Process all found URLs
@@ -242,32 +317,56 @@ async def on_message(message):
             filename = item['filename']
             source = item['source']
             
-            # Check file type from filename or URL
-            file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
-            
-            # Also check URL for common patterns
-            url_lower = url.lower()
-            is_gif = file_ext == 'gif' or '.gif' in url_lower or 'gifv' in url_lower
-            is_video = file_ext in ['mp4', 'webm', 'mov'] or any(ext in url_lower for ext in ['.mp4', '.webm', '.mov'])
-            is_image = file_ext in ['jpg', 'jpeg', 'png', 'webp'] or any(ext in url_lower for ext in ['.jpg', '.jpeg', '.png', '.webp'])
-            
-            # Download the file
-            file_bytes = await download_file(url)
-            if not file_bytes:
-                continue
-            
-            # Analyze based on file type
-            if is_gif or is_video:
-                # Video/GIF analysis
-                is_dangerous, reason, details = analyze_video_for_flashing(file_bytes)
-                if is_dangerous:
-                    should_remove = True
+            # Special handling for YouTube
+            if source == 'youtube' or is_youtube_url(url):
+                # Download YouTube video (first 30 seconds only)
+                video_path = await download_youtube_video(url, max_duration=30)
+                
+                if video_path:
+                    # Analyze the downloaded video
+                    is_dangerous, reason, details = analyze_video_for_flashing(video_path)
                     
-            elif is_image:
-                # Image analysis
-                is_dangerous, reason = analyze_image_for_flashing(file_bytes)
-                if is_dangerous:
-                    should_remove = True
+                    # Clean up temp file
+                    try:
+                        os.remove(video_path)
+                        os.rmdir(os.path.dirname(video_path))
+                    except:
+                        pass
+                    
+                    if is_dangerous:
+                        should_remove = True
+                else:
+                    # Couldn't download - skip but log
+                    print(f"Could not download YouTube video: {url}")
+                    continue
+            else:
+                # Regular file download for non-YouTube content
+                # Check file type from filename or URL
+                file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
+                
+                # Also check URL for common patterns
+                url_lower = url.lower()
+                is_gif = file_ext == 'gif' or '.gif' in url_lower or 'gifv' in url_lower
+                is_video = file_ext in ['mp4', 'webm', 'mov'] or any(ext in url_lower for ext in ['.mp4', '.webm', '.mov'])
+                is_image = file_ext in ['jpg', 'jpeg', 'png', 'webp'] or any(ext in url_lower for ext in ['.jpg', '.jpeg', '.png', '.webp'])
+                
+                # Download the file
+                file_bytes = await download_file(url)
+                if not file_bytes:
+                    continue
+                
+                # Analyze based on file type
+                if is_gif or is_video:
+                    # Video/GIF analysis
+                    is_dangerous, reason, details = analyze_video_for_flashing(file_bytes)
+                    if is_dangerous:
+                        should_remove = True
+                        
+                elif is_image:
+                    # Image analysis
+                    is_dangerous, reason = analyze_image_for_flashing(file_bytes)
+                    if is_dangerous:
+                        should_remove = True
             
             # Remove dangerous content
             if should_remove:
@@ -318,18 +417,42 @@ async def manual_check(ctx, url: str):
     """Manually check a URL for photosensitive content"""
     await ctx.send("Analyzing content... This may take a moment.")
     
-    file_bytes = await download_file(url)
-    if not file_bytes:
-        await ctx.send("❌ Could not download file from that URL.")
-        return
-    
-    # Try video analysis first
-    is_dangerous, reason, details = analyze_video_for_flashing(file_bytes)
-    
-    if is_dangerous:
-        await ctx.send(f"⚠️ **WARNING**: {reason}\nThis content may be dangerous for photosensitive individuals.")
+    # Check if it's a YouTube URL
+    if is_youtube_url(url):
+        video_path = await download_youtube_video(url, max_duration=30)
+        
+        if not video_path:
+            await ctx.send("❌ Could not download YouTube video. It may be restricted or unavailable.")
+            return
+        
+        # Analyze the video
+        is_dangerous, reason, details = analyze_video_for_flashing(video_path)
+        
+        # Clean up
+        try:
+            os.remove(video_path)
+            os.rmdir(os.path.dirname(video_path))
+        except:
+            pass
+        
+        if is_dangerous:
+            await ctx.send(f"⚠️ **WARNING**: {reason}\nThis YouTube video may be dangerous for photosensitive individuals.\n\n**Analysis details:**\n• Analyzed first 30 seconds\n• Flash detection threshold exceeded")
+        else:
+            await ctx.send("✅ No obvious photosensitive triggers detected in the first 30 seconds. (Note: This is not a guarantee of safety for the entire video)")
     else:
-        await ctx.send("✅ No obvious photosensitive triggers detected. (Note: This is not a guarantee of safety)")
+        # Regular file download
+        file_bytes = await download_file(url)
+        if not file_bytes:
+            await ctx.send("❌ Could not download file from that URL.")
+            return
+        
+        # Try video analysis first
+        is_dangerous, reason, details = analyze_video_for_flashing(file_bytes)
+        
+        if is_dangerous:
+            await ctx.send(f"⚠️ **WARNING**: {reason}\nThis content may be dangerous for photosensitive individuals.")
+        else:
+            await ctx.send("✅ No obvious photosensitive triggers detected. (Note: This is not a guarantee of safety)")
 
 @bot.command(name='help_photo')
 async def help_command(ctx):
