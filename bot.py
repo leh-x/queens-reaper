@@ -102,6 +102,39 @@ def is_youtube_url(url):
     ]
     return any(re.search(pattern, url) for pattern in youtube_patterns)
 
+def is_giphy_url(url):
+    """Check if URL is a Giphy link"""
+    giphy_patterns = [
+        r'giphy\.com/gifs/',
+        r'giphy\.com/embed/',
+        r'media\.giphy\.com/',
+        r'i\.giphy\.com/',
+    ]
+    return any(re.search(pattern, url.lower()) for pattern in giphy_patterns)
+
+def extract_giphy_media_url(giphy_url):
+    """
+    Extract the direct media URL from a Giphy page URL
+    Example: https://giphy.com/gifs/xxx -> https://media.giphy.com/media/xxx/giphy.gif
+    """
+    try:
+        # Extract GIF ID from various Giphy URL formats
+        # Format: https://giphy.com/gifs/name-ID or https://giphy.com/gifs/ID
+        match = re.search(r'gifs/(?:[\w-]+-)?([a-zA-Z0-9]+)/?', giphy_url)
+        if match:
+            gif_id = match.group(1)
+            # Try the direct media URL
+            return f'https://media.giphy.com/media/{gif_id}/giphy.gif'
+        
+        # Already a direct media URL
+        if 'media.giphy.com' in giphy_url or 'i.giphy.com' in giphy_url:
+            return giphy_url
+            
+        return None
+    except Exception as e:
+        print(f"Error extracting Giphy media URL: {e}")
+        return None
+
 def analyze_image_for_flashing(image_bytes):
     """
     Analyze a static image for high-contrast patterns that could be problematic
@@ -282,7 +315,6 @@ async def on_message(message):
     
     # Also check for direct Tenor URLs in message content
     if 'tenor.com' in message.content.lower() or 'media.tenor.com' in message.content.lower():
-        import re
         # Extract URLs from message
         url_pattern = r'https?://(?:tenor\.com/view/|media\.tenor\.com/)[^\s]+'
         found_urls = re.findall(url_pattern, message.content)
@@ -305,108 +337,141 @@ async def on_message(message):
                 'source': 'youtube'
             })
     
+    # Check for Giphy URLs in message content
+    if 'giphy.com' in message.content.lower():
+        # Extract URLs from message
+        url_pattern = r'https?://(?:media\.)?giphy\.com/[^\s]+'
+        found_urls = re.findall(url_pattern, message.content)
+        for url in found_urls:
+            urls_to_check.append({
+                'url': url,
+                'filename': 'giphy.gif',
+                'source': 'giphy'
+            })
+    
     # Process all found URLs
     if urls_to_check:
-    # Process all found URLs
-    if urls_to_check:
-        for item in urls_to_check:
-            should_remove = False
-            reason = None
-            
-            url = item['url']
-            filename = item['filename']
-            source = item['source']
-            
-            # Special handling for YouTube
-            if source == 'youtube' or is_youtube_url(url):
-                # Download YouTube video (first 30 seconds only)
-                video_path = await download_youtube_video(url, max_duration=30)
+        # Process all found URLs
+        if urls_to_check:
+            for item in urls_to_check:
+                should_remove = False
+                reason = None
                 
-                if video_path:
-                    # Analyze the downloaded video
-                    is_dangerous, reason, details = analyze_video_for_flashing(video_path)
+                url = item['url']
+                filename = item['filename']
+                source = item['source']
+                
+                # Special handling for YouTube
+                if source == 'youtube' or is_youtube_url(url):
+                    # Download YouTube video (first 30 seconds only)
+                    video_path = await download_youtube_video(url, max_duration=30)
                     
-                    # Clean up temp file
-                    try:
-                        os.remove(video_path)
-                        os.rmdir(os.path.dirname(video_path))
-                    except:
-                        pass
-                    
-                    if is_dangerous:
-                        should_remove = True
-                else:
-                    # Couldn't download - skip but log
-                    print(f"Could not download YouTube video: {url}")
-                    continue
-            else:
-                # Regular file download for non-YouTube content
-                # Check file type from filename or URL
-                file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
-                
-                # Also check URL for common patterns
-                url_lower = url.lower()
-                is_gif = file_ext == 'gif' or '.gif' in url_lower or 'gifv' in url_lower
-                is_video = file_ext in ['mp4', 'webm', 'mov'] or any(ext in url_lower for ext in ['.mp4', '.webm', '.mov'])
-                is_image = file_ext in ['jpg', 'jpeg', 'png', 'webp'] or any(ext in url_lower for ext in ['.jpg', '.jpeg', '.png', '.webp'])
-                
-                # Download the file
-                file_bytes = await download_file(url)
-                if not file_bytes:
-                    continue
-                
-                # Analyze based on file type
-                if is_gif or is_video:
-                    # Video/GIF analysis
-                    is_dangerous, reason, details = analyze_video_for_flashing(file_bytes)
-                    if is_dangerous:
-                        should_remove = True
+                    if video_path:
+                        # Analyze the downloaded video
+                        is_dangerous, reason, details = analyze_video_for_flashing(video_path)
                         
-                elif is_image:
-                    # Image analysis
-                    is_dangerous, reason = analyze_image_for_flashing(file_bytes)
-                    if is_dangerous:
-                        should_remove = True
-            
-            # Remove dangerous content
-            if should_remove:
-                try:
-                    await message.delete()
+                        # Clean up temp file
+                        try:
+                            os.remove(video_path)
+                            os.rmdir(os.path.dirname(video_path))
+                        except:
+                            pass
+                        
+                        if is_dangerous:
+                            should_remove = True
+                    else:
+                        # Couldn't download - skip but log
+                        print(f"Could not download YouTube video: {url}")
+                        continue
+                
+                # Special handling for Giphy
+                elif source == 'giphy' or is_giphy_url(url):
+                    # Extract direct media URL from Giphy page
+                    media_url = extract_giphy_media_url(url)
                     
-                    # Send explanation
-                    warning_embed = discord.Embed(
-                        title="⚠️ Photosensitive Content Removed",
-                        description=f"Content posted by {message.author.mention} was removed for safety.",
-                        color=discord.Color.red()
-                    )
-                    warning_embed.add_field(
-                        name="Reason",
-                        value=reason or "Potential photosensitive trigger detected",
-                        inline=False
-                    )
-                    warning_embed.add_field(
-                        name="Source",
-                        value=f"Detected in: {source.replace('_', ' ').title()}",
-                        inline=False
-                    )
-                    warning_embed.add_field(
-                        name="Info",
-                        value="This content may trigger seizures in photosensitive individuals. Please avoid posting rapidly flashing or strobing content.",
-                        inline=False
-                    )
+                    if media_url:
+                        print(f"Extracted Giphy media URL: {media_url}")
+                        file_bytes = await download_file(media_url)
+                        
+                        if file_bytes:
+                            is_dangerous, reason, details = analyze_video_for_flashing(file_bytes)
+                            if is_dangerous:
+                                should_remove = True
+                        else:
+                            print(f"Could not download Giphy media from: {media_url}")
+                            continue
+                    else:
+                        print(f"Could not extract media URL from Giphy: {url}")
+                        continue
+                
+                else:
+                    # Regular file download for non-YouTube/Giphy content
+                    # Check file type from filename or URL
+                    file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
                     
-                    await message.channel.send(embed=warning_embed, delete_after=30)
+                    # Also check URL for common patterns
+                    url_lower = url.lower()
+                    is_gif = file_ext == 'gif' or '.gif' in url_lower or 'gifv' in url_lower
+                    is_video = file_ext in ['mp4', 'webm', 'mov'] or any(ext in url_lower for ext in ['.mp4', '.webm', '.mov'])
+                    is_image = file_ext in ['jpg', 'jpeg', 'png', 'webp'] or any(ext in url_lower for ext in ['.jpg', '.jpeg', '.png', '.webp'])
                     
-                    # Log to console
-                    print(f"Removed photosensitive content ({source}) from {message.author} in {message.guild.name}")
+                    # Download the file
+                    file_bytes = await download_file(url)
+                    if not file_bytes:
+                        continue
                     
-                    # Break after first removal (message is already deleted)
-                    break
-                    
-                except discord.Forbidden:
-                    print(f"Missing permissions to delete message in {message.guild.name}")
-                except Exception as e:
-                    print(f"Error removing content: {e}")
+                    # Analyze based on file type
+                    if is_gif or is_video:
+                        # Video/GIF analysis
+                        is_dangerous, reason, details = analyze_video_for_flashing(file_bytes)
+                        if is_dangerous:
+                            should_remove = True
+                            
+                    elif is_image:
+                        # Image analysis
+                        is_dangerous, reason = analyze_image_for_flashing(file_bytes)
+                        if is_dangerous:
+                            should_remove = True
+                
+                # Remove dangerous content
+                if should_remove:
+                    try:
+                        await message.delete()
+                        
+                        # Send explanation
+                        warning_embed = discord.Embed(
+                            title="⚠️ Photosensitive Content Removed",
+                            description=f"Content posted by {message.author.mention} was removed for safety.",
+                            color=discord.Color.red()
+                        )
+                        warning_embed.add_field(
+                            name="Reason",
+                            value=reason or "Potential photosensitive trigger detected",
+                            inline=False
+                        )
+                        warning_embed.add_field(
+                            name="Source",
+                            value=f"Detected in: {source.replace('_', ' ').title()}",
+                            inline=False
+                        )
+                        warning_embed.add_field(
+                            name="Info",
+                            value="This content may trigger seizures in photosensitive individuals. Please avoid posting rapidly flashing or strobing content.",
+                            inline=False
+                        )
+                        
+                        await message.channel.send(embed=warning_embed, delete_after=30)
+                        
+                        # Log to console
+                        print(f"Removed photosensitive content ({source}) from {message.author} in {message.guild.name}")
+                        
+                        # Break after first removal (message is already deleted)
+                        break
+                        
+                    except discord.Forbidden:
+                        print(f"Missing permissions to delete message in {message.guild.name}")
+                    except Exception as e:
+                        print(f"Error removing content: {e}")
 
     
     # Process commands (if you add any)
@@ -439,6 +504,28 @@ async def manual_check(ctx, url: str):
             await ctx.send(f"⚠️ **WARNING**: {reason}\nThis YouTube video may be dangerous for photosensitive individuals.\n\n**Analysis details:**\n• Analyzed first 30 seconds\n• Flash detection threshold exceeded")
         else:
             await ctx.send("✅ No obvious photosensitive triggers detected in the first 30 seconds. (Note: This is not a guarantee of safety for the entire video)")
+    
+    # Check if it's a Giphy URL
+    elif is_giphy_url(url):
+        media_url = extract_giphy_media_url(url)
+        
+        if not media_url:
+            await ctx.send("❌ Could not extract media from Giphy URL.")
+            return
+        
+        file_bytes = await download_file(media_url)
+        if not file_bytes:
+            await ctx.send("❌ Could not download Giphy file.")
+            return
+        
+        # Analyze the GIF
+        is_dangerous, reason, details = analyze_video_for_flashing(file_bytes)
+        
+        if is_dangerous:
+            await ctx.send(f"⚠️ **WARNING**: {reason}\nThis Giphy GIF may be dangerous for photosensitive individuals.")
+        else:
+            await ctx.send("✅ No obvious photosensitive triggers detected. (Note: This is not a guarantee of safety)")
+    
     else:
         # Regular file download
         file_bytes = await download_file(url)
