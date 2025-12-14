@@ -7,7 +7,7 @@ import numpy as np
 # Add the root directory to the path so we can import bot
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from bot import analyze_video_for_flashing
+from bot import analyze_video_for_flashing, PhotosensitiveConfig
 
 # Path to test resources
 TEST_RESOURCES_DIR = os.path.join(os.path.dirname(__file__), '..', 'test_resources')
@@ -41,7 +41,7 @@ def test_debug_strobe_detailed():
     print(f"Duration: {frame_count_total/fps if fps > 0 else 'unknown'} seconds")
     
     # Now analyze frame differences
-    config = PhotosensitiveConfig()
+    config = PhotosensitiveConfig(fps)
     print(f"\n=== DETECTION SETTINGS ===")
     print(f"FLASH_THRESHOLD: {config.FLASH_THRESHOLD}")
     print(f"FLASH_FREQUENCY_LIMIT: {config.FLASH_FREQUENCY_LIMIT}")
