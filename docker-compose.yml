@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  discord-bot:
+    build: .
+    container_name: queens-reaper
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Mount /tmp for temporary video files
+      - /tmp:/tmp
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Optional: Uncomment to limit resources
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1.0'
+    #       memory: 512M
+    
+    # Health check (optional)
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f bot.py || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
