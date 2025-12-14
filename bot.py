@@ -178,28 +178,92 @@ async def on_message(message):
     if message.author == bot.user:
         return
     
+    # List to store URLs to check (from attachments and embeds)
+    urls_to_check = []
+    
     # Check if message has attachments
     if message.attachments:
         for attachment in message.attachments:
+            urls_to_check.append({
+                'url': attachment.url,
+                'filename': attachment.filename,
+                'source': 'attachment'
+            })
+    
+    # Check for Tenor GIFs and other embeds
+    if message.embeds:
+        for embed in message.embeds:
+            # Tenor GIFs and other image/video embeds
+            if embed.type in ['image', 'gifv', 'video']:
+                # Check for image in embed
+                if embed.image and embed.image.url:
+                    urls_to_check.append({
+                        'url': embed.image.url,
+                        'filename': embed.image.url.split('/')[-1],
+                        'source': 'embed_image'
+                    })
+                # Check for video in embed
+                if embed.video and embed.video.url:
+                    urls_to_check.append({
+                        'url': embed.video.url,
+                        'filename': embed.video.url.split('/')[-1],
+                        'source': 'embed_video'
+                    })
+                # Check for thumbnail (sometimes used for GIFs)
+                if embed.thumbnail and embed.thumbnail.url:
+                    urls_to_check.append({
+                        'url': embed.thumbnail.url,
+                        'filename': embed.thumbnail.url.split('/')[-1],
+                        'source': 'embed_thumbnail'
+                    })
+    
+    # Also check for direct Tenor URLs in message content
+    if 'tenor.com' in message.content.lower() or 'media.tenor.com' in message.content.lower():
+        import re
+        # Extract URLs from message
+        url_pattern = r'https?://(?:tenor\.com/view/|media\.tenor\.com/)[^\s]+'
+        found_urls = re.findall(url_pattern, message.content)
+        for url in found_urls:
+            urls_to_check.append({
+                'url': url,
+                'filename': url.split('/')[-1],
+                'source': 'tenor_link'
+            })
+    
+    # Process all found URLs
+    if urls_to_check:
+    # Process all found URLs
+    if urls_to_check:
+        for item in urls_to_check:
             should_remove = False
             reason = None
             
-            # Check file type
-            file_ext = attachment.filename.lower().split('.')[-1]
+            url = item['url']
+            filename = item['filename']
+            source = item['source']
+            
+            # Check file type from filename or URL
+            file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
+            
+            # Also check URL for common patterns
+            url_lower = url.lower()
+            is_gif = file_ext == 'gif' or '.gif' in url_lower or 'gifv' in url_lower
+            is_video = file_ext in ['mp4', 'webm', 'mov'] or any(ext in url_lower for ext in ['.mp4', '.webm', '.mov'])
+            is_image = file_ext in ['jpg', 'jpeg', 'png', 'webp'] or any(ext in url_lower for ext in ['.jpg', '.jpeg', '.png', '.webp'])
             
             # Download the file
-            file_bytes = await download_file(attachment.url)
+            file_bytes = await download_file(url)
             if not file_bytes:
                 continue
             
             # Analyze based on file type
-            if file_ext in ['gif', 'mp4', 'webm', 'mov']:
+            if is_gif or is_video:
                 # Video/GIF analysis
                 is_dangerous, reason, details = analyze_video_for_flashing(file_bytes)
                 if is_dangerous:
                     should_remove = True
                     
-            elif file_ext in ['jpg', 'jpeg', 'png', 'webp']:
+            elif is_image:
                 # Image analysis
                 is_dangerous, reason = analyze_image_for_flashing(file_bytes)
                 if is_dangerous:
@@ -222,6 +286,11 @@ async def on_message(message):
                         inline=False
                     )
                     warning_embed.add_field(
+                        name="Source",
+                        value=f"Detected in: {source.replace('_', ' ').title()}",
+                        inline=False
+                    )
+                    warning_embed.add_field(
                         name="Info",
                         value="This content may trigger seizures in photosensitive individuals. Please avoid posting rapidly flashing or strobing content.",
                         inline=False
@@ -230,12 +299,16 @@ async def on_message(message):
                     await message.channel.send(embed=warning_embed, delete_after=30)
                     
                     # Log to console
-                    print(f"Removed photosensitive content from {message.author} in {message.guild.name}")
+                    print(f"Removed photosensitive content ({source}) from {message.author} in {message.guild.name}")
+                    
+                    # Break after first removal (message is already deleted)
+                    break
                     
                 except discord.Forbidden:
                     print(f"Missing permissions to delete message in {message.guild.name}")
                 except Exception as e:
                     print(f"Error removing content: {e}")
+
     
     # Process commands (if you add any)
     await bot.process_commands(message)
