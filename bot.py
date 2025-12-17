@@ -302,12 +302,12 @@ async def on_ready():
 async def on_message(message):
     """Called whenever a message is sent in a channel the bot can see"""
     
+    print(f"DEBUG: Processing message from {message.author}")
+
     # Ignore messages from the bot itself
     if message.author == bot.user:
         return
     
-    print(f"DEBUG: Processing message from {message.author}")
-
     # List to store URLs to check (from attachments and embeds)
     urls_to_check = []
     
@@ -329,6 +329,8 @@ async def on_message(message):
         for embed in message.embeds:
             # Tenor GIFs and other image/video embeds
             if embed.type in ['image', 'gifv', 'video']:
+                print(f"DEBUG: Finding the type of embed message from {message.author}")
+                
                 # Check for image in embed
                 if embed.image and embed.image.url:
                     urls_to_check.append({
@@ -336,6 +338,8 @@ async def on_message(message):
                         'filename': embed.image.url.split('/')[-1],
                         'source': 'embed_image'
                     })
+                    print(f"DEBUG: Embed message is an image!")
+
                 # Check for video in embed
                 if embed.video and embed.video.url:
                     urls_to_check.append({
@@ -343,6 +347,8 @@ async def on_message(message):
                         'filename': embed.video.url.split('/')[-1],
                         'source': 'embed_video'
                     })
+                    print(f"DEBUG: Embed message is a video!")
+
                 # Check for thumbnail (sometimes used for GIFs)
                 if embed.thumbnail and embed.thumbnail.url:
                     urls_to_check.append({
@@ -350,6 +356,7 @@ async def on_message(message):
                         'filename': embed.thumbnail.url.split('/')[-1],
                         'source': 'embed_thumbnail'
                     })
+                    print(f"DEBUG: Embed message is a thumbnail!")
     
     # Also check for direct Tenor URLs in message content
     if 'tenor.com' in message.content.lower() or 'media.tenor.com' in message.content.lower():
