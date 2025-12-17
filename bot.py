@@ -306,11 +306,15 @@ async def on_message(message):
     if message.author == bot.user:
         return
     
+    print(f"DEBUG: Processing message from {message.author}")
+
     # List to store URLs to check (from attachments and embeds)
     urls_to_check = []
     
     # Check if message has attachments
     if message.attachments:
+        print(f"DEBUG: Found {len(message.attachments)} attachment(s)")
+
         for attachment in message.attachments:
             urls_to_check.append({
                 'url': attachment.url,
@@ -320,6 +324,8 @@ async def on_message(message):
     
     # Check for Tenor GIFs and other embeds
     if message.embeds:
+        print(f"DEBUG: Found embed message from {message.author}")
+
         for embed in message.embeds:
             # Tenor GIFs and other image/video embeds
             if embed.type in ['image', 'gifv', 'video']:
