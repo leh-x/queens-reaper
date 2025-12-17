@@ -522,6 +522,126 @@ async def on_message(message):
     # Process commands (if you add any)
     await bot.process_commands(message)
 
+@bot.event
+async def on_message_edit(before, after):
+    """Called when a message is edited (including when embeds are loaded)"""
+    
+    # Ignore messages from the bot itself
+    if after.author == bot.user:
+        return
+    
+    # Check if embeds changed
+    if before.embeds == after.embeds:
+        return  # No change in embeds, skip
+    
+    print(f"DEBUG: on_message_edit - Embeds changed for message from {after.author}")
+    
+    urls_to_check = []
+    
+    if after.embeds:
+        print(f"DEBUG: Found {len(after.embeds)} embed(s) in edited message")
+        for embed in after.embeds:
+            if embed.type in ['image', 'gifv', 'video']:
+                print(f"DEBUG: Finding the type of embed message from {after.author}")
+                
+                if embed.image and embed.image.url:
+                    urls_to_check.append({
+                        'url': embed.image.url,
+                        'filename': embed.image.url.split('/')[-1],
+                        'source': 'embed_image'
+                    })
+                    print(f"DEBUG: Embed message is an image!")
+
+                if embed.video and embed.video.url:
+                    urls_to_check.append({
+                        'url': embed.video.url,
+                        'filename': embed.video.url.split('/')[-1],
+                        'source': 'embed_video'
+                    })
+                    print(f"DEBUG: Embed message is a video!")
+
+                if embed.thumbnail and embed.thumbnail.url:
+                    urls_to_check.append({
+                        'url': embed.thumbnail.url,
+                        'filename': embed.thumbnail.url.split('/')[-1],
+                        'source': 'embed_thumbnail'
+                    })
+                    print(f"DEBUG: Embed message is a thumbnail!")
+    
+    if urls_to_check:
+        print(f"DEBUG: Processing {len(urls_to_check)} URL(s) from edited message")
+        for item in urls_to_check:
+            should_remove = False
+            reason = None
+            
+            url = item['url']
+            filename = item['filename']
+            source = item['source']
+            
+            if source == 'youtube' or is_youtube_url(url):
+                video_path = await download_youtube_video(url, max_duration=30)
+                if video_path:
+                    is_dangerous, reason, details = analyze_video_for_flashing(video_path)
+                    try:
+                        os.remove(video_path)
+                        os.rmdir(os.path.dirname(video_path))
+                    except:
+                        pass
+                    if is_dangerous:
+                        should_remove = True
+                else:
+                    continue
+            elif source == 'giphy' or is_giphy_url(url):
+                media_url = extract_giphy_media_url(url)
+                if media_url:
+                    file_bytes = await download_file(media_url)
+                    if file_bytes:
+                        is_dangerous, reason, details = analyze_video_for_flashing(file_bytes)
+                        if is_dangerous:
+                            should_remove = True
+                    else:
+                        continue
+                else:
+                    continue
+            else:
+                file_ext = filename.lower().split('.')[-1] if '.' in filename else ''
+                url_lower = url.lower()
+                is_gif = file_ext == 'gif' or '.gif' in url_lower or 'gifv' in url_lower
+                is_video = file_ext in ['mp4', 'webm', 'mov'] or any(ext in url_lower for ext in ['.mp4', '.webm', '.mov'])
+                is_image = file_ext in ['jpg', 'jpeg', 'png', 'webp'] or any(ext in url_lower for ext in ['.jpg', '.jpeg', '.png', '.webp'])
+                
+                file_bytes = await download_file(url)
+                if not file_bytes:
+                    continue
+                
+                if is_gif or is_video:
+                    is_dangerous, reason, details = analyze_video_for_flashing(file_bytes)
+                    if is_dangerous:
+                        should_remove = True
+                elif is_image:
+                    is_dangerous, reason = analyze_image_for_flashing(file_bytes)
+                    if is_dangerous:
+                        should_remove = True
+            
+            if should_remove:
+                try:
+                    await after.delete()
+                    warning_embed = discord.Embed(
+                        title="⚠️ Photosensitive Content Removed",
+                        description=f"Content posted by {after.author.mention} was removed for safety.",
+                        color=discord.Color.red()
+                    )
+                    warning_embed.add_field(name="Reason", value=reason or "Potential photosensitive trigger detected", inline=False)
+                    warning_embed.add_field(name="Source", value=f"Detected in: {source.replace('_', ' ').title()}", inline=False)
+                    warning_embed.add_field(name="Info", value="This content may trigger seizures in photosensitive individuals. Please avoid posting rapidly flashing or strobing content.", inline=False)
+                    await after.channel.send(embed=warning_embed, delete_after=30)
+                    print(f"Removed photosensitive content ({source}) from {after.author} in {after.guild.name} (via edit)")
+                    break
+                except discord.Forbidden:
+                    print(f"Missing permissions to delete message in {after.guild.name}")
+                except Exception as e:
+                    print(f"Error removing content: {e}")
+
 @bot.command(name='check')
 async def manual_check(ctx, url: str):
     """Manually check a URL for photosensitive content"""
