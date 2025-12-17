@@ -302,12 +302,12 @@ async def on_ready():
 async def on_message(message):
     """Called whenever a message is sent in a channel the bot can see"""
     
-    print(f"DEBUG: Processing message from {message.author}")
-
     # Ignore messages from the bot itself
     if message.author == bot.user:
         return
     
+    print(f"DEBUG: Processing message from {message.author}")
+
     # List to store URLs to check (from attachments and embeds)
     urls_to_check = []
     
