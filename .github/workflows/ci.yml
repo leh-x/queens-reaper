@@ -53,17 +53,11 @@ jobs:
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: '🚨 CI Tests Failed',
+              title: 'CI Tests Failed',
               body: `[View Run](${context.payload.repository.html_url}/actions/runs/${context.runId})`,
               labels: ['bug', 'ci-failure'],
               assignees: [context.actor]  // Assigns to person who pushed
             });
-
-            await github.rest.projects.createCard({
-            project_id: 2,  // Get this from your project
-            content_id: issue.id,
-            content_type: 'Issue'
-          });
           } 
 
           
