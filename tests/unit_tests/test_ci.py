@@ -20,7 +20,7 @@ class TestCI_IssueCreation:
         is_dangerous, reason, details = analyze_video_for_flashing(SAFE_GIF)
         
         # Assert that it was NOT detected as dangerous
-        assert is_dangerous is True, "safe.gif should NOT be detected as dangerous"
+        assert is_dangerous is False, "safe.gif should NOT be detected as dangerous"
         assert reason is None, "No reason should be provided for safe content"
         print("✓ safe.gif correctly identified as safe")
 
