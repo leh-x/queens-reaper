@@ -1,3 +1,9 @@
+name: docker-image
+
+permissions:
+  issues: write
+  contents: read
+  
 on:
   workflow_run:
     workflows: ["Run Tests"]
