@@ -30,7 +30,6 @@ env/
 
 # Environment variables and secrets
 .env
-config.py
 
 # IDE
 .vscode/
