@@ -7,7 +7,8 @@ import numpy as np
 # Add the root directory to the path so we can import bot
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from bot import analyze_video_for_flashing, PhotosensitiveConfig
+from Queens-Reaper.media import MediaURL
+from Queens-Reaper.config import PhotosensitiveConfig
 
 # Path to test resources
 TEST_RESOURCES_DIR = os.path.join(os.path.dirname(__file__), '..', 'test_resources')
@@ -16,7 +17,9 @@ UNSAFE_GIF = os.path.join(TEST_RESOURCES_DIR, 'test_strobe.gif')
 
 def test_debug_unsafe_gif():
     """Debug test to see what values we're getting from unsafe.gif"""
-    is_dangerous, reason, details = analyze_video_for_flashing(UNSAFE_GIF)
+    temp = MediaURL('testing.url.gif')
+
+    is_dangerous, reason, details = temp.analyze(UNSAFE_GIF)
     
     print(f"\n=== UNSAFE.GIF DEBUG INFO ===")
     print(f"is_dangerous: {is_dangerous}")
@@ -86,7 +89,9 @@ def test_debug_strobe_detailed():
         print(f"Threshold needed: {config.FLASH_THRESHOLD}")
     
     # Now run the actual detection
-    is_dangerous, reason, details = analyze_video_for_flashing(UNSAFE_GIF)
+    temp = MediaURL('testing.url.gif')
+
+    is_dangerous, reason, details = temp.analyze(UNSAFE_GIF)
     
     print(f"\n=== ACTUAL DETECTION RESULT ===")
     print(f"is_dangerous: {is_dangerous}")
