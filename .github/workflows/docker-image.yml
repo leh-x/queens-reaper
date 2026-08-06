@@ -1,0 +1,41 @@
+name: docker-image
+
+permissions:
+  contents: read
+  packages: write
+  
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    # Only run if Unit Tests Succeeded
+    if:
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+        # Only run from this specific push, this is a safeguard 
+        # that prevents untested code from being pushed to the image
+        # This can happen if a push happens before the tests are done
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with: 
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.event.workflow_run.head_sha }}
