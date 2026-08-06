@@ -7,8 +7,8 @@ import numpy as np
 # Add the root directory to the path so we can import bot
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from Queens-Reaper.media import MediaURL
-from Queens-Reaper.config import PhotosensitiveConfig
+from media import MediaURL
+from config import PhotosensitiveConfig
 
 # Path to test resources
 TEST_RESOURCES_DIR = os.path.join(os.path.dirname(__file__), '..', 'test_resources')
