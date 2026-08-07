@@ -70,7 +70,7 @@ class TestPhotosensitiveDetection:
         """Test that surpressed messages that lead to unsafe links are
         are marked as potentially unsafe"""
 
-        urls = MediaURL.classify_messages(UNSAFE_SUPRESSED)
+        urls = MediaURL.classify_message(UNSAFE_SUPRESSED)
 
         url_results = []
 
@@ -89,7 +89,7 @@ class TestPhotosensitiveDetection:
     def test_no_link_msg(self):
         """Test that a regular message with no links are marked as safe"""
 
-        urls = MediaURL.classify_messages(SAFE_NO_LINK_MSG)
+        urls = MediaURL.classify_message(SAFE_NO_LINK_MSG)
 
         assert not urls, "Should be an empty list because there was nothing unsafe"
         
