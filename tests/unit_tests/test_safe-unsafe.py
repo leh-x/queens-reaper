@@ -11,7 +11,8 @@ from media import MediaURL
 TEST_RESOURCES_DIR = os.path.join(os.path.dirname(__file__), '..', 'test_resources')
 UNSAFE_GIF = os.path.join(TEST_RESOURCES_DIR, 'test_strobe.gif')
 SAFE_GIF = os.path.join(TEST_RESOURCES_DIR, 'test_safe.gif')
-
+UNSAFE_SUPRESSED = os.path.join(TEST_RESOURCES_DIR, 'test_unsafe_supressed_msg.txt')
+SAFE_NO_LINK_MSG = os.path.join(TEST_RESOURCES_DIR, 'test_safe_no_links_msg.txt')
 
 class TestPhotosensitiveDetection:
     """Test suite for photosensitive content detection"""
@@ -64,6 +65,36 @@ class TestPhotosensitiveDetection:
         assert is_dangerous is False, "safe.gif should return False for is_dangerous"
         assert reason is None, "safe.gif should return None for reason"
         print("✓ safe.gif returns correct False status")
+
+    def test_unsafe_supressed_message(self):
+        """Test that surpressed messages that lead to unsafe links are
+        are marked as potentially unsafe"""
+
+        urls = MediaURL.classify_messages(UNSAFE_SUPRESSED)
+
+        url_results = []
+
+        # download the contents
+        for u in urls:
+            u.download()
+            is_dangerous, reason, details = u.analyze()
+            url_results.append({
+                'is_dangerous': is_dangerous,
+                'reason': reason,
+                'details': details
+            })
+
+        assert all(r['is_dangerous'] for r in url_results), "unsafe_supressed_message.txt should all be dangerous"
+
+    def test_no_link_msg(self):
+        """Test that a regular message with no links are marked as safe"""
+
+        urls = MediaURL.classify_messages(SAFE_NO_LINK_MSG)
+
+        assert not urls, "Should be an empty list because there was nothing unsafe"
+        
+
+
 
 
 if __name__ == "__main__":
