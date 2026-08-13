@@ -3,7 +3,7 @@
 # AI:           Claude
 # Date:         Aug 05 2026
 # Purpose:      Manages URL classes to classify, extract, download, and analyse
-# Last Edited:  Aug 05 2026
+# Last Edited:  Aug 06 2026
 
 import tempfile
 import requests
@@ -17,54 +17,96 @@ import cv2
 from config import PhotosensitiveConfig
 
 class MediaURL:
-    def __init__(self, raw_url, filename=None):
+
+    def __init__(self, raw_url, filename = None, source = None):
         self.raw_url = raw_url
         self.filename = filename
         self.media_url = raw_url                    # default: no extracting means it's the same thing
+        self.source = source
         self.raw_bytes = None
         self.result = None
 
     @classmethod
-    def classify(cls, raw_url, filename=None):
-        if YouTubeURL.matches(raw_url):
-            return YouTubeURL(raw_url, filename)
+    def classify(cls, raw_url, filename = None, source = None):
+        if YouTubeURL._match(raw_url):
+            return YouTubeURL(raw_url, filename, source)
         
-        elif GiphyURL.matches(raw_url):
-            return GiphyURL(raw_url, filename)
+        elif GiphyURL._match(raw_url):
+            return GiphyURL(raw_url, filename, source)
         
-        elif TenorURL.matches(raw_url):
-            return TenorURL(raw_url, filename)
+        elif TenorURL._match(raw_url):
+            return TenorURL(raw_url, filename, source)
         
-        else:
-            return cls(raw_url, filename)  # plain/generic MediaURL
+        elif MediaURL._match(raw_url, filename):
+            return MediaURL(raw_url, filename, source)
 
+        return None
+
+    @classmethod
+    def classify_message(cls, msg):
+        urls = []
+
+        urls.extend(YouTubeURL._matches(msg) or [])
+        urls.extend(GiphyURL._matches(msg) or [])
+        urls.extend(TenorURL._matches(msg) or [])
+        urls.extend(MediaURL._matches(msg) or [])
+                
+        return urls
+    
+    @staticmethod
+    def _match(url, filename = None):
+        text = f"{filename or ''} {url}".lower()
+        return bool(re.search(r'\.(gif|gifv|mp4|webm|mov)', text))
+
+    @staticmethod
+    def _matches(str):
+        found_urls = re.findall(r'https?://\S+', str)
+
+        urls = []
+        for u in found_urls:
+
+            if any(sub._match(u) for sub in MediaURL.__subclasses__()):
+                continue
+
+            if MediaURL._match(u):
+                urls.append(MediaURL(u, u.split('/')[-1], 'plain_link'))
+
+        return urls or None
+            
     async def download(self):
         """Download a file from URL and return as bytes"""
         try:
-            response = await asyncio.to_thread(requests.get, self.media_url, timeout=10)
+            response = await asyncio.to_thread(requests.get, self.media_url, timeout = 10)
             response.raise_for_status()
             self.raw_bytes = io.BytesIO(response.content)
+
         except Exception as e:
             print(f"Error downloading file: {e}")
             self.raw_bytes = None
 
         return self
 
-    def analyze(self):
+    def analyze(self, file_bytes = None):
         """
         Analyze a video/GIF for photosensitive triggers
         Returns: (is_dangerous, reason, details)
         """
+        if file_bytes is None:
+            file_bytes = self.raw_bytes
+
+        owns_temp_file = not isinstance(file_bytes, str)
+        temp_path = None
+
         try:
             # Handle both BytesIO and file path
-            if isinstance(self.raw_bytes, str):
+            if isinstance(file_bytes, str):
                 # It's a file path
-                temp_path = self.raw_bytes
+                temp_path = file_bytes
             else:
                 # It's BytesIO, save to temp file
-                temp_path = '/tmp/temp_video.mp4'
-                with open(temp_path, 'wb') as f:
-                    f.write(self.raw_bytes.read())
+                fd, temp_path = tempfile.mkstemp(suffix = '.mp4', dir = '/tmp')
+                with os.fdopen(fd, 'wb') as f:
+                    f.write(file_bytes.read())
             
             cap = cv2.VideoCapture(temp_path)
             
@@ -146,16 +188,49 @@ class MediaURL:
                 }
             
             return False, None, None
-            
+
+          
         except Exception as e:
             print(f"Error analyzing video: {e}")
             return False, None, None
 
+        finally:
+            if owns_temp_file and temp_path:
+                # Clean up temp file
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+
+    def cleanup(self):
+        return True
+
+    def get_url(self): return self.media_url
+    def get_filename(self): return self.filename
+    def get_source(self): return self.source
 
 class YouTubeURL(MediaURL):
     @staticmethod
-    def matches(url):
-        return bool(re.search(r'youtu\.be/|youtube\.com/watch\?v=', url))
+    def _match(url):
+        return bool(re.search(r'https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[^\s]+', url))
+
+    @staticmethod
+    def _matches(str):
+
+        # Check for YouTube URLs in message content
+        if 'youtube.com' not in str.lower() and 'youtu.be' not in str.lower():
+            return None
+        
+        # Extract Youtube URLs from message
+        url_pattern = r'https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[^\s]+'
+        found_urls = re.findall(url_pattern, str)
+
+        urls = [
+            MediaURL.classify(u, 'youtube-video', 'youtube')
+            for u in found_urls
+        ]
+
+        return urls or None
 
     async def download(self):
         """
@@ -187,7 +262,7 @@ class YouTubeURL(MediaURL):
                 stderr=asyncio.subprocess.PIPE
             )
             
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout = 60)
             
             if process.returncode == 0 and os.path.exists(output_path):
                 self.raw_bytes = output_path
@@ -205,11 +280,39 @@ class YouTubeURL(MediaURL):
 
         return self
 
+    def cleanup(self):
+        if isinstance(self.raw_bytes, str) and os.path.exists(self.raw_bytes):
+            try:
+                os.remove(self.raw_bytes)
+                os.rmdir(os.path.dirname(self.raw_bytes))
+                
+                return True
+
+            except:
+                return False
 
 class GiphyURL(MediaURL):
     @staticmethod
-    def matches(url):
+    def _match(url):
         return 'giphy.com' in url.lower()
+
+    @staticmethod
+    def _matches(str):
+
+        # Check for Giphy URLs in message content
+        if 'giphy.com' not in str.lower():
+            return None
+        
+        # Extract URLs from message
+        url_pattern = r'https?://(?:media\.)?giphy\.com/[^\s]+'
+        found_urls = re.findall(url_pattern, str)
+
+        urls = [
+            MediaURL.classify(u, 'giphy-gif', 'giphy')
+            for u in found_urls
+        ]
+
+        return urls or None
 
     async def download(self):
         """
@@ -245,6 +348,25 @@ class GiphyURL(MediaURL):
 
 class TenorURL(MediaURL):
     @staticmethod
-    def matches(url):
+    def _match(url):
         return 'tenor.com' in url.lower()
+
+    @staticmethod
+    def _matches(str):
+
+        # Also check for direct Tenor URLs in message content
+        if 'tenor.com' not in str.lower() and 'media.tenor.com' not in str.lower():
+            return None
+        
+        # Extract Tenor URLs from message
+        url_pattern = r'https?://(?:tenor\.com/view/|media\.tenor\.com/)[^\s]+'
+        found_urls = re.findall(url_pattern, str)
+
+        urls = [
+            MediaURL.classify(u, u.split('/')[-1], 'tenor-link')
+            for u in found_urls
+        ]
+
+        return urls or None
+
     # no overrides needed — base extract()/download() are fine as-is
