@@ -11,6 +11,7 @@ from media import MediaURL
 TEST_RESOURCES_DIR = os.path.join(os.path.dirname(__file__), '..', 'test_resources')
 UNSAFE_GIF = os.path.join(TEST_RESOURCES_DIR, 'test_strobe.gif')
 SAFE_GIF = os.path.join(TEST_RESOURCES_DIR, 'test_safe.gif')
+SAFE_IMG = os.path.join(TEST_RESOURCES_DIR, 'testing_safe_still.jpg')
 UNSAFE_SUPRESSED = os.path.join(TEST_RESOURCES_DIR, 'test_unsafe_supressed_msg.txt')
 SAFE_NO_LINK_MSG = os.path.join(TEST_RESOURCES_DIR, 'test_safe_no_links_msg.txt')
 
@@ -92,6 +93,16 @@ class TestPhotosensitiveDetection:
         urls = MediaURL.classify_message(SAFE_NO_LINK_MSG)
 
         assert not urls, "Should be an empty list because there was nothing unsafe"
+
+    def test_img_safe(self):
+        """Test that even a high contrast image is marked as safe"""
+        temp = MediaURL('testing.url.jpg')
+
+        is_dangerous, reason, details = temp.analyze(SAFE_IMG)
+
+        assert is_dangerous is False, "A still image cannot be a flashing trigger"
+
+
         
 
 
